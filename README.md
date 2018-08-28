@@ -1,10 +1,12 @@
 # `migrations` plugin for zicht/z
 
-Define migrations jobs to run only once on for example `post deploy`. 
+Add migrations jobs to run only once on an remote envirement. 
 
-This plugin will scan the migrations path for files (which default is `./z_migrations/*.yml` but can be overwritten with the `migrations.path` property) and merge the config with the local z file so can be run when the migration is not run on the the given environment.
+This plugin will scan the migrations path for files and merge the defined migrations files with the local z file so it can be run when the migration hasn't been run on the the remote environment. This is all done in-memory so no files are changed.
 
-All migrations are stored on the remote server and to make sure this plugin keeps working you should add the following to the `rsync.exclude` file:   
+The default search pattern is: `./z_migrations/*.yml` and can be overwritten with the `migrations.path` property.
+
+An migrations reference file is stored on the remote server and to make sure this plugin keeps working you should add the following to the `rsync.exclude` file:
 
 ```
 .z.migrations
