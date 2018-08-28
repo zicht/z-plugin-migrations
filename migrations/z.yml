@@ -1,0 +1,12 @@
+# @version ">=2.0"
+
+migrations:
+    path: "./z_migrations/*.yml"
+
+tasks:
+    migrations.list:
+        help: list the migrations run on the given envirement
+        args:
+            target_env: ?
+        do:
+          - $(migrations.print_list(target_env))

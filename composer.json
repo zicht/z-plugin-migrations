@@ -1,0 +1,14 @@
+{
+    "name": "zicht/z-plugin-migrations",
+    "description": "Migration plugin for Z",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Philip bergman",
+            "email": "philip@zicht.nl"
+        }
+    ],
+    "require": {
+
+    }
+}
