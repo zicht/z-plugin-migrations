@@ -22,7 +22,7 @@ use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
 class Plugin extends BasePlugin
 {
 
-    private $ctx;
+    private $ctx = [];
 
     /**
      * Appends the refs configuration
@@ -54,14 +54,7 @@ class Plugin extends BasePlugin
                 if (null === $env = $c->resolve('target_env')) {
                     return;
                 }
-                $migrations = [];
-                foreach ($this->getMigrations($c, $env) as list($hash, $date)) {
-                    $migrations[$hash] = $date;
-                }
-                foreach ($this->ctx as $hash => $date) {
-                    $migrations[$hash] = $date;
-                }
-                $this->setMigrations($c, $env, $migrations);
+                $this->setMigrations($c, $env, array_merge($this->getMigrations($c, $env), $this->ctx));
             }
         );
 
@@ -69,14 +62,26 @@ class Plugin extends BasePlugin
             ['migrations', 'print_list'],
             function(Container $c, $env) {
                 $migrations = $this->getMigrations($c, $env);
-                $files = array_map('basename', glob($c->resolve(['migrations', 'path'])));
-                $table = new Table(new StreamOutput(STDOUT));
-                $table->setHeaders(['file', 'ref', 'executed', 'date']);
+                $files = glob($c->resolve(['migrations', 'path']));
+                $table = new Table($c->output);
+                $table->setHeaders(['file', 'ref', 'executed', 'date', 'deploy commit', 'comment']);
                 foreach ($files as $file) {
-                    if (false !== $index = array_search(sha1($file), array_column($migrations, 0))) {
-                        $table->addRow([$file, $migrations[$index][0], "<fg=green;options=bold>✔</>", $migrations[$index][1]]);
+                    if (false !== $index = array_search((basename($file)), array_column($migrations, 0))) {
+                        $row = [
+                            basename($file),
+                            $migrations[$index][1],
+                            "<fg=green;options=bold>✔</>",
+                            $migrations[$index][2],
+                            $migrations[$index][3],
+                            null,
+                        ];
+                        if ($migrations[$index][1] !== sha1_file(realpath($file))) {
+                            $row[5] = "<comment>Migrations was executed but looks like file has been changed.</comment>";
+                        }
+
+                        $table->addRow($row);
                     } else {
-                        $table->addRow([$file, $migrations[$index][0], "<fg=yellow;options=bold>✘</>", $migrations[$index][1]]);
+                        $table->addRow([$file, null, "<fg=yellow;options=bold>✘</>", null, null, null]);
                     }
                 }
                 $table->render();
@@ -86,20 +91,22 @@ class Plugin extends BasePlugin
         $container->method(
             ['migrations', 'is_valid'],
             function(Container $c, $file) {
-                $hash = sha1(basename($file));
                 if (null === $env = $c->resolve('target_env')) {
-                    return;
+                    return false;
                 }
-                if (!in_array($hash, array_column($this->getMigrations($c, $env), 0))) {
-                    if (!isset($this->ctx[$hash])) {
-                        $this->ctx[$hash] = new \DateTimeImmutable();
+                $migrations = $this->getMigrations($c, $env);
+                if (false !== $index = array_search(basename($file), array_column($migrations, 0))) {
+                    list(,$content,$date,$commit) = $migrations[$index];
+                    if (sha1_file(realpath($file)) !== $content) {
+                        $c->output->writeln(sprintf('# <comment>File "%s" was run on "%s" while deploying "%s", but looks like file has been changed.</comment>', basename($file), $date, $commit));
                     }
+                    return false;
+                } else {
+                    $this->ctx[] = [basename($file), sha1_file(realpath($file)), (new \DateTime)->format(\DateTime::RFC3339), $c->resolve(['build', 'version'])];
                     return true;
                 }
-                return false;
             }
         );
-
     }
 
 
@@ -108,16 +115,13 @@ class Plugin extends BasePlugin
      */
     private function setMigrations(Container $c, $env, array $migrations = [])
     {
-
         $content = '';
-
-        foreach ($migrations as $hash => $time) {
-            $content .= sprintf('%s %s\n', $hash, $time->format(\DateTime::RFC3339));
+        foreach ($migrations as $data) {
+            $content .= implode(" ", $data) . '\n';
         }
-
         $c->exec(
             sprintf(
-                'ssh %s "cd %s && echo -en \'%s\' > .z.migrations"',
+                'ssh %s "cd %s && echo -en \'%s\' | column -t > .z.migrations"',
                 $c->resolve(['envs', $env, 'ssh']),
                 $c->resolve(['envs', $env, 'root']),
                 $content
@@ -133,7 +137,6 @@ class Plugin extends BasePlugin
     private function getMigrations(Container $c, $env)
     {
         static $migrations;
-
         if (!$migrations) {
             $migrations = [];
             $list = $c->helperExec(
@@ -147,10 +150,13 @@ class Plugin extends BasePlugin
                 if (empty($line)) {
                     continue;
                 }
-                $migrations[] = explode(" ", $line, 2);
+                // should be an line with following pattern:
+                // FILE_NAME FILE_CONTENT_HASH MIGRATION_DATE COMMIT_HASH
+                $migrations[] = preg_split('/\s+/', $line, 4);
             }
             $migrations = array_filter($migrations);
         }
+
         return $migrations;
     }
 
@@ -160,11 +166,8 @@ class Plugin extends BasePlugin
      */
     public function setContainerBuilder(ContainerBuilder $c)
     {
-
         foreach (glob($c->config['migrations']['path']) as $file) {
-
             $data = Yaml::parse(file_get_contents($file));
-
             foreach ($data as $task => $name) {
                 foreach ($name as $step => $jobs) {
                     foreach ((array)$jobs as $job) {
@@ -174,7 +177,6 @@ class Plugin extends BasePlugin
             }
 
         }
-
         $c->config['tasks']['deploy']['post'][] = "$(migrations.update)";
     }
 }

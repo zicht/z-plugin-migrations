@@ -15,7 +15,7 @@ z_migrations
 
 This will exclude the local migration files and makes sure the migrations files on the server won`t be removed.
 
-To check which migrations are executed you could do and `z deploy production --explain` or use the `z migrations:list` to check the state of the migrations files. 
+To check which migrations are executed you could do and `z deploy production --explain` or use the `z env:migrations:list` to check the state of the migrations files. 
 
 ## Example:
 
@@ -38,7 +38,7 @@ plugins: ['migrations' ....
 After an deploy on staging you should get the following with:
 
 ```
-z migrations:list staging
+z envmigrations:list staging
 ```
 
 ```
