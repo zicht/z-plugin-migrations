@@ -139,7 +139,8 @@ class Plugin extends BasePlugin implements PluginCacheSeedInterface
     private function getMigrations(Container $c, $env)
     {
         static $migrations;
-        if (!$migrations) {
+
+        if (is_null($migrations)) {
             $migrations = [];
             $list = $c->helperExec(
                 sprintf(
