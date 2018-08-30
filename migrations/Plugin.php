@@ -7,19 +7,19 @@
 namespace Zicht\Tool\Plugin\Migrations;
 
 use Symfony\Component\Console\Helper\Table;
-use Symfony\Component\Console\Output\StreamOutput;
 use Symfony\Component\Yaml\Yaml;
 use Zicht\Tool\Container\Container;
 use Zicht\Tool\Container\ContainerBuilder;
 use Zicht\Tool\Plugin as BasePlugin;
 use Symfony\Component\Config\Definition\Builder\ArrayNodeDefinition;
+use Zicht\Tool\PluginCacheSeedInterface;
 
 /**
  * Class Plugin
  *
  * @package Zicht\Tool\Plugin\Migrations
  */
-class Plugin extends BasePlugin
+class Plugin extends BasePlugin implements PluginCacheSeedInterface
 {
 
     private $ctx = [];
@@ -36,7 +36,9 @@ class Plugin extends BasePlugin
             ->children()
                 ->arrayNode('migrations')
                     ->children()
-                        ->scalarNode('path')->end()
+                        ->scalarNode('path')
+                            ->isRequired()
+                        ->end()
                     ->end()
                 ->end()
             ->end();
@@ -75,13 +77,13 @@ class Plugin extends BasePlugin
                             $migrations[$index][3],
                             null,
                         ];
-                        if ($migrations[$index][1] !== sha1_file(realpath($file))) {
+                        if ($migrations[$index][1] !== sha1_file($file)) {
                             $row[5] = "<comment>Migrations was executed but looks like file has been changed.</comment>";
                         }
 
                         $table->addRow($row);
                     } else {
-                        $table->addRow([$file, null, "<fg=yellow;options=bold>✘</>", null, null, null]);
+                        $table->addRow([basename($file), null, "<fg=yellow;options=bold>✘</>", null, null, null]);
                     }
                 }
                 $table->render();
@@ -97,12 +99,12 @@ class Plugin extends BasePlugin
                 $migrations = $this->getMigrations($c, $env);
                 if (false !== $index = array_search(basename($file), array_column($migrations, 0))) {
                     list(,$content,$date,$commit) = $migrations[$index];
-                    if (sha1_file(realpath($file)) !== $content) {
+                    if (sha1_file($file) !== $content) {
                         $c->output->writeln(sprintf('# <comment>File "%s" was run on "%s" while deploying "%s", but looks like file has been changed.</comment>', basename($file), $date, $commit));
                     }
                     return false;
                 } else {
-                    $this->ctx[] = [basename($file), sha1_file(realpath($file)), (new \DateTime)->format(\DateTime::RFC3339), $c->resolve(['build', 'version'])];
+                    $this->ctx[] = [basename($file), sha1_file($file), (new \DateTime)->format(\DateTime::RFC3339), $c->resolve(['build', 'version'])];
                     return true;
                 }
             }
@@ -171,12 +173,19 @@ class Plugin extends BasePlugin
             foreach ($data as $task => $name) {
                 foreach ($name as $step => $jobs) {
                     foreach ((array)$jobs as $job) {
-                        $c->config['tasks'][$task][$step][] = sprintf('@(if migrations.is_valid("%s")) %s', realpath($file), $job);
+                        $c->config['tasks'][$task][$step][] = sprintf('@(if migrations.is_valid("%s")) %s', $file, $job);
                     }
                 }
             }
-
         }
         $c->config['tasks']['deploy']['post'][] = "$(migrations.update)";
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getCacheSeed(array $config = [])
+    {
+        return sha1(implode('', array_map('sha1_file', glob($config['migrations']['path']))));
     }
 }
