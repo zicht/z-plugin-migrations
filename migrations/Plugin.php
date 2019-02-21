@@ -121,6 +121,10 @@ class Plugin extends BasePlugin implements PluginCacheSeedInterface
         foreach ($migrations as $data) {
             $content .= implode(" ", $data) . '\n';
         }
+        if (empty($content)) {
+            $c->output->writeln("# not updating remote migrations file (no migrations data)");
+            return;
+        }
         $c->exec(
             sprintf(
                 'ssh %s "cd %s && echo -en \'%s\' | column -t > .z.migrations"',
@@ -139,12 +143,11 @@ class Plugin extends BasePlugin implements PluginCacheSeedInterface
     private function getMigrations(Container $c, $env)
     {
         static $migrations;
-
-        if (is_null($migrations)) {
+        if (!$migrations) {
             $migrations = [];
             $list = $c->helperExec(
                 sprintf(
-                    "ssh %s \"cd %s && [ -f .z.migrations ] && cat .z.migrations || echo ''\"",
+                    "ssh %s \"cd %s && [ -f .z.migrations ] && cat .z.migrations || exit 0\"",
                     $c->resolve(['envs', $env, 'ssh']),
                     $c->resolve(['envs', $env, 'root'])
                 )
@@ -159,7 +162,6 @@ class Plugin extends BasePlugin implements PluginCacheSeedInterface
             }
             $migrations = array_filter($migrations);
         }
-
         return $migrations;
     }
 
@@ -179,7 +181,8 @@ class Plugin extends BasePlugin implements PluginCacheSeedInterface
                 }
             }
         }
-        $c->config['tasks']['deploy']['post'][] = "$(migrations.update)";
+        $c->config['tasks']['deploy']['flags']['skip_migrations'] = false;
+        $c->config['tasks']['deploy']['post'][] = "@(if !skip_migrations) $(migrations.update)";
     }
 
     /**
